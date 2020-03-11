@@ -36,4 +36,4 @@ Export to Target:
 
 Update Phrasebook:
 - Accepts either *.ts files or *.qph files, but not mixed
-- Results in an old, but patched/updated *.qph file
+- Results in an patched/updated *.qph file
