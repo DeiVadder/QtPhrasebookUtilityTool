@@ -1,20 +1,30 @@
 # QtPhrasebookUtilityTool
 A tool to modify Qt-translation or phrasebook files.
 
+When you have multiple applications and for each one you have translation files, you most likely want to import/use some of your already translated phrases in a new project or simply in one of your other projects. To do this, Qt expects you to use „Phrasebooks“ that can be loaded via Linguist and can then there be used.
+Sadly you have to add each translation you want into the Phrasebook by hand and you can link against phrasebooks when you update your translation file via "lupdate".
+
+Linguist simply does not offer a decent export, update or patch feature
+
+This is where this "Phrasebook Utility Tool" comes into play.
+
 With this tool you'll be able to:
 - merge two *.ts files into one
 - Patch a *.ts file with a phrasebook
-- Export a *.ts file(s) as phrasebook(s)
+- Export *.ts file(s) as phrasebook(s)
 - Export multiple *.ts files into a single phrasebook
-- Update an existing phrasebook with wither a *.ts file or an other phrasebook
+- Update an existing phrasebook with with a *.ts file or an other phrasebook
 
 
-Menu:
+Ui information:
+
+File:
 The file menu allows you to add *.ts or *.qph files to either the sources or targets list view.
 You can also remove selected entries from either view.
 
 From the source and target view, you select your desired sources/targets and via the action menu you decide what function will operate on those selected files.
 
+Actions:
 Merge Into Target:
  - Accepts as source only *.ts files
  - Results in a *.ts file
