@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>800</width>
+    <height>600</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>MainWindow</string>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QGridLayout" name="gridLayout">
+    <item row="1" column="0">
+     <widget class="QListView" name="listViewSourceFiles">
+      <property name="alternatingRowColors">
+       <bool>true</bool>
+      </property>
+      <property name="selectionMode">
+       <enum>QAbstractItemView::MultiSelection</enum>
+      </property>
+     </widget>
+    </item>
+    <item row="0" column="1">
+     <widget class="QLabel" name="label_2">
+      <property name="text">
+       <string>Targets</string>
+      </property>
+     </widget>
+    </item>
+    <item row="1" column="1">
+     <widget class="QListView" name="listViewDestinationFile">
+      <property name="alternatingRowColors">
+       <bool>true</bool>
+      </property>
+     </widget>
+    </item>
+    <item row="0" column="0">
+     <widget class="QLabel" name="label">
+      <property name="text">
+       <string>Sources</string>
+      </property>
+     </widget>
+    </item>
+    <item row="2" column="0" colspan="2">
+     <widget class="QProgressBar" name="progressBar">
+      <property name="value">
+       <number>0</number>
+      </property>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QMenuBar" name="menubar">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>800</width>
+     <height>21</height>
+    </rect>
+   </property>
+   <widget class="QMenu" name="menuMen">
+    <property name="title">
+     <string>File</string>
+    </property>
+    <addaction name="actionAdd_Source_File"/>
+    <addaction name="actionAdd_Targer_File"/>
+    <addaction name="actionRemove_Selected_File"/>
+   </widget>
+   <widget class="QMenu" name="menuActions">
+    <property name="title">
+     <string>Actions</string>
+    </property>
+    <addaction name="actionMerge_Into_Target"/>
+    <addaction name="actionPatch_Ts_File"/>
+    <addaction name="separator"/>
+    <addaction name="actionExport_To_Phrasebook"/>
+    <addaction name="actionExport_To_Target"/>
+    <addaction name="actionUpdate_Phrasebook"/>
+   </widget>
+   <addaction name="menuMen"/>
+   <addaction name="menuActions"/>
+  </widget>
+  <widget class="QStatusBar" name="statusbar"/>
+  <action name="actionAdd_Source_File">
+   <property name="text">
+    <string>Add Source Files</string>
+   </property>
+  </action>
+  <action name="actionAdd_Targer_File">
+   <property name="text">
+    <string>Add Target Files</string>
+   </property>
+  </action>
+  <action name="actionMerge_Into_Target">
+   <property name="text">
+    <string>Merge Into Target</string>
+   </property>
+  </action>
+  <action name="actionExport_To_Phrasebook">
+   <property name="text">
+    <string>Export As Phrasebooks</string>
+   </property>
+  </action>
+  <action name="actionRemove_Selected_File">
+   <property name="text">
+    <string>Remove Selected Files</string>
+   </property>
+  </action>
+  <action name="actionExport_To_Target">
+   <property name="text">
+    <string>Export To Target</string>
+   </property>
+  </action>
+  <action name="actionUpdate_Phrasebook">
+   <property name="text">
+    <string>Update Phrasebook</string>
+   </property>
+  </action>
+  <action name="actionPatch_Ts_File">
+   <property name="text">
+    <string>Patch Ts File</string>
+   </property>
+  </action>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
