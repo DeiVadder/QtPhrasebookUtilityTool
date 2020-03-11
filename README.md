@@ -17,12 +17,12 @@ From the source and target view, you select your desired sources/targets and via
 
 Merge Into Target:
  - Accepts as source only *.ts files
- - Results in *.ts 
+ - Results in a *.ts file
 
 Patch Ts File:
 - Accepts as source only *.qph files
 - Target file needs to be a *.ts file 
-- In the targeted *.ts file untranslated entries with a matching source string will be patch a translation found inside the phrasebook. The change needs to be confirmed, later on, via the Linguist tool
+- In the targeted *.ts file, untranslated entries with a matching source string will be patch, if a translation was found  inside the phrasebook. The change needs to be confirmed, later on, via the Linguist tool.
 
 Export as Phrasebooks:
 - Turns all selected *.ts files into *.qph files
