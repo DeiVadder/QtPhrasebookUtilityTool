@@ -13,6 +13,7 @@ public:
 
     void exportFilesToSingleNewPhrasebook(const QList<QUrl> &sources, const QUrl &destination, const QString &sourceLanguage);
     void exportFilesToNewPhrasebooks(const QList<QUrl> &sources, const QString &sourceLanguage);
+    void exportTsFileAsCsv(const QList<QUrl> &sources, const QUrl &file);
 
     void updatePhrasebookFromFiles(const QList<QUrl> &sources, const QUrl &targetPhrasebook, const QString &sourceLanguage);
     void patchTsFileFromPhrasebooks(const QList<QUrl> &sourcesQph, const QUrl &targetTsFile);
@@ -30,10 +31,16 @@ signals:
 private:
     bool checkLanguages(const QUrl &url);
     void init(const QList<QUrl> &sources, const QString sourceLanguage);
-    bool preprocessSources(const QList<QUrl> &sources);
+    bool preprocessTsSources(const QList<QUrl> &sources);
 
     QVector<Phrase> phrasesFromPhrasebook(const QUrl &url, bool emitSignal = true);
     QVector<Phrase> parseSingleTsFile(const QUrl &url, const QString &defaultName = QString());
+
+    [[nodiscard]] bool isTsFile(const QUrl &url);
+    [[nodiscard]] bool hasLanguageDefined(const QUrl &url);
+    [[nodiscard]] QLocale getLanguageFromTsFile(const QUrl &url);
+
+    [[nodiscard]]QString findExactMatch(const QString &source, const QString &pattern);
 
 protected:
     QString m_targetLanguage;

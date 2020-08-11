@@ -2,11 +2,6 @@
 
 #include <QTextStream>
 
-Phrase::Phrase()
-{
-
-}
-
 Phrase::Phrase(const Phrase &phrase)
 {
     m_source = phrase.m_source;
@@ -88,6 +83,13 @@ QString Phrase::extractInfo(const QString &line)
     }
 
     return QString();
+}
+
+bool operator <(const Phrase &phraseA, const Phrase &phraseB)
+{
+    if(phraseA.m_definition == phraseB.m_definition)
+        return  phraseA.m_source < phraseB.m_source;
+    return phraseA.m_definition < phraseB.m_definition;
 }
 
 bool operator >(const Phrase &phraseA, const Phrase &phraseB)

@@ -13,7 +13,7 @@ public:
 
     enum Type {None, Unfinished, Finished, Vanished, Obsolete };
 
-    Phrase();
+    Phrase() = default;
     Phrase(const Phrase &phrase);
     Phrase(const QString &phraseText);
     Phrase(const QString &context, const QString &definition);
@@ -32,6 +32,9 @@ public:
     inline const QString &source() const {return m_source;}
     inline const QString &target() const {return m_target;}
     inline const QString &definition() const {return  m_definition;}
+    inline QString sourceLiteral() {return m_source.replace('\n', "\\n");}
+    inline QString targetLiteral() {return m_target.replace('\n', "\\n");}
+    inline QString definitionLiteral() {return m_definition.replace('\n', "\\n");}
     inline const QVector<Phrase> oldSources() const {return  m_oldSources;}
 
     inline void setTranslation(const QString &translation){m_target = translation;}
@@ -39,6 +42,7 @@ public:
     friend bool operator ==(const Phrase &phraseA, const Phrase &phraseB);
     friend bool operator !=(const Phrase &phraseA, const Phrase &phraseB) { return !(phraseA == phraseB);}
     friend bool operator >(const Phrase &phraseA, const Phrase &phraseB);
+    friend bool operator <(const Phrase &phraseA, const Phrase &phraseB);
     Phrase &operator=(const Phrase &phrase);
 
     friend QTextStream &operator<<(QTextStream &stream, const Phrase &phrase);

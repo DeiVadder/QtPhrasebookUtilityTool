@@ -1,9 +1,12 @@
 #include "phrasebookmaker.h"
 #include "phrase.h"
 
+#include "csvio.h"
+
 #include <QFile>
 #include <QSaveFile>
 #include <QTextStream>
+#include <QRegularExpression>
 
 PhrasebookMaker::PhrasebookMaker(QObject *parent) : QObject(parent)
 {
@@ -15,7 +18,7 @@ void PhrasebookMaker::exportFilesToSingleNewPhrasebook(const QList<QUrl> &source
     init(sources, sourceLanguage);
 
     //Assumption, sources are *.ts files, destionation is a already existing *.qph file
-    if(!preprocessSources(sources))
+    if(!preprocessTsSources(sources))
         return;
 
     if(!destination.isValid()){
@@ -73,7 +76,7 @@ void PhrasebookMaker::exportFilesToNewPhrasebooks(const QList<QUrl> &sources, co
     QList<QUrl> nUrls;
     for( const QUrl &url : sources){
 
-        if(!preprocessSources(QList<QUrl>{url}))
+        if(!preprocessTsSources(QList<QUrl>{url}))
             return;
 
         /*  Steps:
@@ -128,9 +131,55 @@ void PhrasebookMaker::exportFilesToNewPhrasebooks(const QList<QUrl> &sources, co
     emit newlyCreatedFiles(nUrls);
 }
 
-const int FileModeUndefined(-1);
-const int FileModeTS(0);
-const int FileModeQPH(1);
+void PhrasebookMaker::exportTsFileAsCsv(const QList<QUrl> &sources, const QUrl &file)
+{
+    if(sources.isEmpty()){
+        emit error("No source files selected!");
+        return;
+    }
+    preprocessTsSources(sources);
+
+    QString fileName;
+    if(file.isValid() && !file.isEmpty())
+        fileName = file.toLocalFile();
+    else
+        //If file is empty or invalid, construct one from the name of the source file
+        fileName = sources.first().toLocalFile().replace(QStringLiteral(".ts"),QStringLiteral(".csv"));
+
+    //If sources is only 1 file, use exportAsCsv, else extract all Qlocals, check that there are no dublicats and than call the overload
+    bool ok = false;
+    if(sources.size() == 1){
+        const QUrl &source = sources.first();
+
+        QVector<Phrase> phrases = parseSingleTsFile(source);
+        ok = CsvIo::exportAsCsv(phrases,getLanguageFromTsFile(source),fileName);
+    } else {
+        QVector<QLocale> locales;
+        QVector<QVector<Phrase> > phrases;
+        for(const QUrl & url : sources){
+            const QLocale l = getLanguageFromTsFile(url);
+            if(locales.contains(l)){
+                emit error("Multiple sources have the same language");
+                return;
+            }
+            locales.append(l);
+            phrases.append(parseSingleTsFile(url));
+        }
+
+        ok = CsvIo::exportAsCsv(phrases,locales,fileName);
+    }
+
+    emit progressValue(m_max);
+
+    if(ok)
+        emit success();
+    else
+        emit error("Failed to export into csv file!");
+}
+
+constexpr int FileModeUndefined(-1);
+constexpr int FileModeTS(0);
+constexpr int FileModeQPH(1);
 
 void PhrasebookMaker::updatePhrasebookFromFiles(const QList<QUrl> &sources, const QUrl &targetPhrasebook, const QString &sourceLanguage)
 {
@@ -570,7 +619,7 @@ void PhrasebookMaker::init(const QList<QUrl> &sources, const QString sourceLangu
     emit progressMaximum(m_max);
 }
 
-bool PhrasebookMaker::preprocessSources(const QList<QUrl> &sources)
+bool PhrasebookMaker::preprocessTsSources(const QList<QUrl> &sources)
 {
     m_targetLanguage.clear();
 
@@ -602,9 +651,22 @@ bool PhrasebookMaker::preprocessSources(const QList<QUrl> &sources)
             return false;
         }
 
+        if(!isTsFile(url)){
+            emit error(tr("Invalid file format"));
+            return  false;
+        }
+
+        if(!hasLanguageDefined(url)){
+            emit error(tr("*ts file has no language defined"));
+            return false;
+        }
+
+        /*
         QTextStream stream(&readFile);
         bool isTsFile(false);
         QString language;
+
+//        if(getLanguageFromTsFile(url).);
 
         while(!stream.atEnd()){
             QString line = stream.readLine();
@@ -639,6 +701,7 @@ bool PhrasebookMaker::preprocessSources(const QList<QUrl> &sources)
             emit error(tr("*ts file has no language defined"));
             return false;
         }
+        */
     }
     return true;
 }
@@ -728,4 +791,62 @@ QVector<Phrase> PhrasebookMaker::parseSingleTsFile(const QUrl &url, const QStrin
     emit progressValue(m_value);
 
     return phrases;
+}
+
+bool PhrasebookMaker::isTsFile(const QUrl &url)
+{
+    QFile file(url.toLocalFile());
+    if(!file.exists()|| !file.open(QIODevice::ReadOnly))
+        return false;
+
+    //Assumption: DOCTYPE has to be in the first 3 Lines of a ts file, actually first one, to be sure we parse 2 lines more
+    QString context;
+    QTextStream s(&file);
+    for(int i(0); i < 3; i++)
+        context.append(s.readLine());
+
+    return !findExactMatch(context, QStringLiteral("<!DOCTYPE TS>")).isEmpty();
+}
+
+bool PhrasebookMaker::hasLanguageDefined(const QUrl &url)
+{
+    QFile file(url.toLocalFile());
+    if(!file.exists()|| !file.open(QIODevice::ReadOnly))
+        return false;
+
+    //Assumption: DOCTYPE has to be in the first 3 Lines of a ts file, actually first one, to be sure we parse 2 lines more
+    QString context;
+    QTextStream s(&file);
+    for(int i(0); i < 3; i++)
+        context.append(s.readLine());
+
+    return !findExactMatch(context, QStringLiteral("language=\"(.*)\">")).isEmpty();
+}
+
+QLocale PhrasebookMaker::getLanguageFromTsFile(const QUrl &url)
+{
+    QLocale l;
+    QFile file(url.toLocalFile());
+    if(!file.exists()|| !file.open(QIODevice::ReadOnly))
+        return l;
+    //Assumption: Language has to be in the first 3 Lines of a ts file
+    QString context;
+    QTextStream s(&file);
+    for(int i(0); i < 3; i++)
+        context.append(s.readLine());
+
+    const QString matched = findExactMatch(context, QStringLiteral("language=\"(.*)\">"));
+    l = QLocale(matched);
+    return  l;
+}
+
+QString PhrasebookMaker::findExactMatch(const QString &source, const QString &pattern)
+{
+    QRegularExpression regEx(pattern);
+    QRegularExpressionMatch match = regEx.match(source);
+
+    if(match.hasMatch()){
+        return  match.captured(match.lastCapturedIndex());
+    }
+    return QString();
 }

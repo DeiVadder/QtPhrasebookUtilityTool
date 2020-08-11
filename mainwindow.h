@@ -25,6 +25,7 @@ private slots:
     void addCreatedFiles(const QList<QUrl> &files);
 
     void mergeFiles();
+    void exportToCsv();
     void exportToSinglePhrasebook();
     void exportToPhrasebooks();
     void updatePhrasebook();
@@ -35,6 +36,7 @@ private slots:
 
     QString requestSourceLanguage();
 signals:
+    void exportFileToNewCsv(const QList<QUrl> &sources, const QUrl &target);
     void exportFilesToNewPhrasebooks(const QList<QUrl> &sources, const QString &srcLang);
     void exportFilesToSingleNewPhrasebook(const QList<QUrl> &sources, const QUrl &destination, const QString &sourceLanguage);
     void updatePhrasebookWithSources(const QList<QUrl> &sourcesTs, const QUrl &targetPhrasebook, const QString &sourceLanguage);

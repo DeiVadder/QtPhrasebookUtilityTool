@@ -38,6 +38,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(this, &MainWindow::exportFilesToSingleNewPhrasebook, pMaker, &PhrasebookMaker::exportFilesToSingleNewPhrasebook);
     connect(this, &MainWindow::updatePhrasebookWithSources, pMaker, &PhrasebookMaker::updatePhrasebookFromFiles);
     connect(this, &MainWindow::patchTsFileFromPhrasebooks, pMaker, &PhrasebookMaker::patchTsFileFromPhrasebooks);
+    connect(this, &MainWindow::exportFileToNewCsv, pMaker, &PhrasebookMaker::exportTsFileAsCsv);
 
     t->start();
 
@@ -51,6 +52,8 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->actionExport_To_Target, &QAction::triggered, this, &MainWindow::exportToSinglePhrasebook);
     connect(ui->actionExport_To_Phrasebook, &QAction::triggered, this, &MainWindow::exportToPhrasebooks);
     connect(ui->actionUpdate_Phrasebook, &QAction::triggered, this, &MainWindow::updatePhrasebook);
+
+    connect(ui->actionExport_as_CSV, &QAction::triggered, this, &MainWindow::exportToCsv);
 
     ui->listViewSourceFiles->setSelectionMode(QAbstractItemView::ExtendedSelection);
 
@@ -131,6 +134,29 @@ void MainWindow::mergeFiles()
     }
 }
 
+void MainWindow::exportToCsv()
+{
+    //Allowed is one or no target to be selected
+    //When one target move all ts entries into that one csv file
+    //When no  target simply create 1 csv file parallel to the source
+
+    const QList<QUrl> sources = fetchSources();
+    if(sources.isEmpty())
+        return;
+
+
+    QUrl target;
+    QModelIndexList selectionTo = ui->listViewDestinationFile->selectionModel()->selectedIndexes();
+    if(!selectionTo.isEmpty() && selectionTo.size() == 1){
+        target = m_targetModel.data(selectionTo.first(),Model::UrlRole).toUrl();
+    } else {
+        QMessageBox::warning(this, tr("Selected Target Files"), tr("Please select at most one target file"));
+        return;
+    }
+
+    emit exportFileToNewCsv(sources, target);
+}
+
 void MainWindow::exportToSinglePhrasebook()
 {
     //Sources
@@ -161,10 +187,10 @@ void MainWindow::exportToPhrasebooks()
     if(sources.isEmpty())
         return;
 
-    PhrasebookMaker pMaker;
-    connect(&pMaker, &PhrasebookMaker::error, this, &MainWindow::displayError);
-    connect(&pMaker, &PhrasebookMaker::progressMaximum, ui->progressBar, &QProgressBar::setMaximum);
-    connect(&pMaker, &PhrasebookMaker::progressValue, ui->progressBar, &QProgressBar::setValue);
+//    PhrasebookMaker pMaker;
+//    connect(&pMaker, &PhrasebookMaker::error, this, &MainWindow::displayError);
+//    connect(&pMaker, &PhrasebookMaker::progressMaximum, ui->progressBar, &QProgressBar::setMaximum);
+//    connect(&pMaker, &PhrasebookMaker::progressValue, ui->progressBar, &QProgressBar::setValue);
 
     QString srcLang = requestSourceLanguage();
 
@@ -224,7 +250,7 @@ void MainWindow::patchTsFile()
         QMessageBox::information(nullptr, tr("Translation file"), tr("Please select a translation file to update"));
         return;
     } else {
-        //add in cause it's not in target list
+        //add in case it's not in target list
         addCreatedFiles(QList<QUrl>{target});
     }
 
@@ -248,7 +274,7 @@ QString MainWindow::requestSourceLanguage()
         languages.append( QLocale::languageToString(static_cast<QLocale::Language>(i)));
     }
 
-    QStringList refLanguages = languages;
+    const QStringList refLanguages = languages;
     std::sort(languages.begin(), languages.end());
 
     int index = languages.indexOf(QLocale::languageToString(static_cast<QLocale::Language>(QLocale::system().language())));
