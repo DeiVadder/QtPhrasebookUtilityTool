@@ -16,6 +16,7 @@ MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
 {
+//    setAcceptDrops(true);
     ui->setupUi(this);
 
     setWindowTitle(tr("Phrasebook Utility Tool"));
@@ -59,6 +60,9 @@ MainWindow::MainWindow(QWidget *parent)
 
     ui->listViewSourceFiles->setModel(&m_sourceModel);
     ui->listViewDestinationFile->setModel(&m_targetModel);
+
+    connect(ui->listViewSourceFiles, &FileDropListView::urlsDropedIntoView, &m_sourceModel, &Model::addEntries);
+    connect(ui->listViewDestinationFile, &FileDropListView::urlsDropedIntoView, &m_targetModel, &Model::addEntries);
 }
 
 MainWindow::~MainWindow()

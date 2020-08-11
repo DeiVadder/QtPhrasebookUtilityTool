@@ -16,7 +16,7 @@
   <widget class="QWidget" name="centralwidget">
    <layout class="QGridLayout" name="gridLayout">
     <item row="1" column="0">
-     <widget class="QListView" name="listViewSourceFiles">
+     <widget class="FileDropListView" name="listViewSourceFiles">
       <property name="alternatingRowColors">
        <bool>true</bool>
       </property>
@@ -33,7 +33,7 @@
      </widget>
     </item>
     <item row="1" column="1">
-     <widget class="QListView" name="listViewDestinationFile">
+     <widget class="FileDropListView" name="listViewDestinationFile">
       <property name="alternatingRowColors">
        <bool>true</bool>
       </property>
@@ -135,6 +135,13 @@
    </property>
   </action>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>FileDropListView</class>
+   <extends>QListView</extends>
+   <header>filedroplistview.h</header>
+  </customwidget>
+ </customwidgets>
  <resources/>
  <connections/>
 </ui>

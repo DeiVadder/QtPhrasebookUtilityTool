@@ -31,6 +31,7 @@ public:
 
     explicit Model(QObject *parent = nullptr);
 
+    void addEntries(const QList<QUrl> &urls);
     void addEntry(const QUrl &url, bool noDublicates = false);
     void removeRowsByIndex(const QModelIndexList &indexes);
 

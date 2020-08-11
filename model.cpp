@@ -20,6 +20,17 @@ Model::Model(QObject *parent)
 {
 }
 
+void Model::addEntries(const QList<QUrl> &urls)
+{
+    beginInsertRows(QModelIndex(), rowCount(), rowCount());
+    for(const QUrl &url : urls){
+        TranslationFile t(url);
+        if(!m_files.contains(t))
+            m_files << t;
+    }
+    endInsertRows();
+}
+
 void Model::addEntry(const QUrl &url, bool noDublicates)
 {
 

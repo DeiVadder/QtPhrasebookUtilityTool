@@ -26,6 +26,7 @@ SOURCES += \
 
 HEADERS += \
     csvio.h \
+    filedroplistview.h \
     mainwindow.h \
     merger.h \
     model.h \
