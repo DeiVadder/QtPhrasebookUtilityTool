@@ -25,8 +25,10 @@ void Model::addEntries(const QList<QUrl> &urls)
     beginInsertRows(QModelIndex(), rowCount(), rowCount());
     for(const QUrl &url : urls){
         TranslationFile t(url);
-        if(!m_files.contains(t))
+        if(!m_files.contains(t)){
             m_files << t;
+            emit selectLastInserted(index(m_files.size()-1));
+        }
     }
     endInsertRows();
 }
@@ -37,8 +39,10 @@ void Model::addEntry(const QUrl &url, bool noDublicates)
     beginInsertRows(QModelIndex() , rowCount(), rowCount());
     TranslationFile t(url);
     if(noDublicates){
-        if(!m_files.contains(t))
+        if(!m_files.contains(t)){
             m_files << t;
+            emit selectLastInserted(index(m_files.size()-1));
+        }
     } else {
         m_files << t;
     }

@@ -4,6 +4,7 @@
 #include "merger.h"
 #include "phrasebookmaker.h"
 
+#include <QItemSelectionModel>
 #include <QFileDialog>
 #include <QInputDialog>
 #include <QMessageBox>
@@ -11,12 +12,12 @@
 #include <QThread>
 
 #include <QDebug>
+#include <QProcess>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
 {
-//    setAcceptDrops(true);
     ui->setupUi(this);
 
     setWindowTitle(tr("Phrasebook Utility Tool"));
@@ -38,7 +39,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(this, &MainWindow::exportFilesToNewPhrasebooks, pMaker, &PhrasebookMaker::exportFilesToNewPhrasebooks);
     connect(this, &MainWindow::exportFilesToSingleNewPhrasebook, pMaker, &PhrasebookMaker::exportFilesToSingleNewPhrasebook);
     connect(this, &MainWindow::updatePhrasebookWithSources, pMaker, &PhrasebookMaker::updatePhrasebookFromFiles);
-    connect(this, &MainWindow::patchTsFileFromPhrasebooks, pMaker, &PhrasebookMaker::patchTsFileFromPhrasebooks);
+    connect(this, &MainWindow::patchTsFileFromPhrasebooks, pMaker, &PhrasebookMaker::patchTsFromFiles);
     connect(this, &MainWindow::exportFileToNewCsv, pMaker, &PhrasebookMaker::exportTsFileAsCsv);
 
     t->start();
@@ -61,8 +62,19 @@ MainWindow::MainWindow(QWidget *parent)
     ui->listViewSourceFiles->setModel(&m_sourceModel);
     ui->listViewDestinationFile->setModel(&m_targetModel);
 
-    connect(ui->listViewSourceFiles, &FileDropListView::urlsDropedIntoView, &m_sourceModel, &Model::addEntries);
-    connect(ui->listViewDestinationFile, &FileDropListView::urlsDropedIntoView, &m_targetModel, &Model::addEntries);
+    connect(ui->listViewSourceFiles,    &FileDropListView::urlsDropedIntoView, &m_sourceModel, &Model::addEntries);
+    connect(ui->listViewDestinationFile,&FileDropListView::urlsDropedIntoView, &m_targetModel, &Model::addEntries);
+
+    connect(ui->listViewSourceFiles,    &FileDropListView::doubleClicked, this, &MainWindow::onDoubleClickedSources);
+    connect(ui->listViewDestinationFile,&FileDropListView::doubleClicked, this, &MainWindow::onDoubleClickedTarget);
+
+    //Automatically select last inserted
+    connect(&m_sourceModel, &Model::selectLastInserted, ui->listViewSourceFiles->selectionModel(), [this](const QModelIndex &index)->void{
+        ui->listViewSourceFiles->selectionModel()->select(index,QItemSelectionModel::Select);
+    });
+    connect(&m_targetModel, &Model::selectLastInserted, ui->listViewDestinationFile->selectionModel(), [this](const QModelIndex &index)->void{
+        ui->listViewDestinationFile->selectionModel()->select(index,QItemSelectionModel::Select);
+    });
 }
 
 MainWindow::~MainWindow()
@@ -151,14 +163,23 @@ void MainWindow::exportToCsv()
 
     QUrl target;
     QModelIndexList selectionTo = ui->listViewDestinationFile->selectionModel()->selectedIndexes();
-    if(!selectionTo.isEmpty() && selectionTo.size() == 1){
-        target = m_targetModel.data(selectionTo.first(),Model::UrlRole).toUrl();
+    if(!selectionTo.isEmpty()){
+        if(selectionTo.size() == 1){
+            target = m_targetModel.data(selectionTo.first(),Model::UrlRole).toUrl();
+        } else {
+            QMessageBox::warning(this, tr("Selected Target Files"), tr("Please select at most one target file"));
+            return;
+        }
     } else {
-        QMessageBox::warning(this, tr("Selected Target Files"), tr("Please select at most one target file"));
-        return;
+        target = QFileDialog::getSaveFileUrl(nullptr,tr("Select target file"), QString(),tr("csv (*.csv)"));
+        if(target.isValid())
+            m_targetModel.addEntry(target);
     }
 
-    emit exportFileToNewCsv(sources, target);
+    QString sourceLanguage = requestSourceLanguage();
+
+    if(!sourceLanguage.isEmpty())
+    emit exportFileToNewCsv(sources, target, sourceLanguage);
 }
 
 void MainWindow::exportToSinglePhrasebook()
@@ -174,9 +195,12 @@ void MainWindow::exportToSinglePhrasebook()
         target = m_targetModel.data(selectionTo.first(),Model::UrlRole).toUrl();
     } else {
         target = QFileDialog::getSaveFileUrl(nullptr,tr("Select target file"), QString(),tr("Phrasebook (*.qph)"));
+        if(target.isValid())
+            m_targetModel.addEntry(target);
     }
     if(!target.isValid())
         return;
+
 
     QString sourceLanguage = requestSourceLanguage();
 
@@ -296,6 +320,32 @@ QString MainWindow::requestSourceLanguage()
     }
 
     return QLocale(static_cast<QLocale::Language>(index + 2)).name();
+}
+
+void MainWindow::onDoubleClicked(const Model &model, const QModelIndex &index)
+{
+    //Open native File explorer on selected file
+    QUrl fileUrl = model.data(index, Model::UrlRole).toUrl();
+    QString filePath = fileUrl.toLocalFile();
+#ifdef Q_OS_MAC
+    QStringList args;
+    args << "-e";
+    args << "tell application \"Finder\"";
+    args << "-e";
+    args << "activate";
+    args << "-e";
+    args << "select POSIX file \""+filePath+"\"";
+    args << "-e";
+    args << "end tell";
+    QProcess::startDetached("osascript", args);
+#endif
+
+#ifdef Q_OS_WIN
+    QStringList args;
+    args << "/select," << QDir::toNativeSeparators(filePath);
+    QProcess::startDetached("explorer", args);
+#endif
+
 }
 
 QList<QUrl> MainWindow::fetchSources()

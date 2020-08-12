@@ -1,6 +1,7 @@
 #ifndef MODEL_H
 #define MODEL_H
 
+#include <QItemSelectionModel>
 #include <QAbstractListModel>
 #include <QUrl>
 
@@ -23,6 +24,9 @@ private:
 class Model : public QAbstractListModel
 {
     Q_OBJECT
+
+signals:
+    void selectLastInserted(const QModelIndex &index);
 
 public:
     enum UrlRoles {
