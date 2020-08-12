@@ -84,6 +84,7 @@
     <addaction name="actionUpdate_Phrasebook"/>
     <addaction name="separator"/>
     <addaction name="actionExport_as_CSV"/>
+    <addaction name="actionUpdate_Ts_file_from_CSV"/>
    </widget>
    <addaction name="menuMen"/>
    <addaction name="menuActions"/>
@@ -132,6 +133,16 @@
   <action name="actionExport_as_CSV">
    <property name="text">
     <string>Export as CSV</string>
+   </property>
+  </action>
+  <action name="actionUpdate_Phrasebook_from_CSV">
+   <property name="text">
+    <string>Update Phrasebook From CSV</string>
+   </property>
+  </action>
+  <action name="actionUpdate_Ts_file_from_CSV">
+   <property name="text">
+    <string>Update Ts File From CSV</string>
    </property>
   </action>
  </widget>

@@ -7,8 +7,6 @@
 #include <QUrl>
 #include <QMimeData>
 
-#include <QDebug>
-
 class FileDropListView : public QListView
 {
     Q_OBJECT
@@ -24,25 +22,30 @@ signals:
 protected:
     virtual void dropEvent(QDropEvent *e) override
     {
-        qDebug() << Q_FUNC_INFO;
-        emit urlsDropedIntoView(e->mimeData()->urls());
+        QList<QUrl> urls = e->mimeData()->urls();
+        for(const QUrl &url : urls){
+            if(!url.fileName().endsWith(QStringLiteral(".csv")) &&
+                    !url.fileName().endsWith(QStringLiteral(".ts")) &&
+                    !url.fileName().endsWith(QStringLiteral(".qph"))){
+                urls.removeOne(url);
+            }
+        }
+        if(!urls.isEmpty())
+            emit urlsDropedIntoView(urls);
         e->acceptProposedAction();
     }
 
     virtual void dragMoveEvent(QDragMoveEvent *e) override
     {
         if(e->mimeData()->hasUrls()){
-            e->accept();
-//            ev->acceptProposedAction();
+            e->acceptProposedAction();
         }
     }
 
     virtual void dragEnterEvent(QDragEnterEvent *ev) override
     {
-        qDebug() << Q_FUNC_INFO << acceptDrops() << ev->mimeData()->hasUrls();
         if(ev->mimeData()->hasUrls()){
-            ev->accept();
-//            ev->acceptProposedAction();
+            ev->acceptProposedAction();
         }
     }
 };

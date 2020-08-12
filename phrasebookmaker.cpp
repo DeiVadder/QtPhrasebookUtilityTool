@@ -13,12 +13,17 @@ PhrasebookMaker::PhrasebookMaker(QObject *parent) : QObject(parent)
 
 }
 
+constexpr bool TargetLanguagesHaveToBeTheSame = true;
+
+const QString PatternSourceLanguage(QStringLiteral("(?<=sourcelanguage=\")(.*?)(?=\")"));
+const QString PatternLanguage(QStringLiteral("(?<=\\ language=\")(.*?)(?=\">)"));
+
 void PhrasebookMaker::exportFilesToSingleNewPhrasebook(const QList<QUrl> &sources, const QUrl &destination, const QString &sourceLanguage)
 {
     init(sources, sourceLanguage);
 
     //Assumption, sources are *.ts files, destionation is a already existing *.qph file
-    if(!preprocessTsSources(sources))
+    if(!preprocessTsSources(sources, TargetLanguagesHaveToBeTheSame))
         return;
 
     if(!destination.isValid()){
@@ -42,17 +47,17 @@ void PhrasebookMaker::exportFilesToSingleNewPhrasebook(const QList<QUrl> &source
         //Actual read
         QVector<Phrase> uniquePhrases;
         for( const QUrl &url : sources){
-             const QVector<Phrase> phrases = parseSingleTsFile(url,defaultName);
+            const QVector<Phrase> phrases = parseSingleTsFile(url,defaultName);
 
-             for(const Phrase &p : phrases){
-                 if(!uniquePhrases.contains(p))
-                     uniquePhrases.append(p);
+            for(const Phrase &p : phrases){
+                if(!uniquePhrases.contains(p))
+                    uniquePhrases.append(p);
 
-                 for(const Phrase & subset : p.oldSources()){
-                     if(!uniquePhrases.contains(subset))
-                         uniquePhrases.append(subset);
-                 }
-             }
+                for(const Phrase & subset : p.oldSources()){
+                    if(!uniquePhrases.contains(subset))
+                        uniquePhrases.append(subset);
+                }
+            }
         }
 
         for(const Phrase &p : qAsConst(uniquePhrases)){
@@ -131,20 +136,27 @@ void PhrasebookMaker::exportFilesToNewPhrasebooks(const QList<QUrl> &sources, co
     emit newlyCreatedFiles(nUrls);
 }
 
-void PhrasebookMaker::exportTsFileAsCsv(const QList<QUrl> &sources, const QUrl &file)
+void PhrasebookMaker::exportTsFileAsCsv(const QList<QUrl> &sources, const QUrl &file, const QString &sourceLanguage)
 {
     if(sources.isEmpty()){
         emit error("No source files selected!");
         return;
     }
-    preprocessTsSources(sources);
+    preprocessTsSources(sources, false);
+
+    m_value = 0;
+    m_max = sources.size() + 1;
+    emit progressMaximum(m_max);
+    emit progressValue(0);
 
     QString fileName;
     if(file.isValid() && !file.isEmpty())
         fileName = file.toLocalFile();
-    else
+    else{
         //If file is empty or invalid, construct one from the name of the source file
         fileName = sources.first().toLocalFile().replace(QStringLiteral(".ts"),QStringLiteral(".csv"));
+        emit newlyCreatedFiles(QList<QUrl>{QUrl::fromLocalFile(fileName)});
+    }
 
     //If sources is only 1 file, use exportAsCsv, else extract all Qlocals, check that there are no dublicats and than call the overload
     bool ok = false;
@@ -152,172 +164,146 @@ void PhrasebookMaker::exportTsFileAsCsv(const QList<QUrl> &sources, const QUrl &
         const QUrl &source = sources.first();
 
         QVector<Phrase> phrases = parseSingleTsFile(source);
-        ok = CsvIo::exportAsCsv(phrases,getLanguageFromTsFile(source),fileName);
+        emit progressValue(++m_value);
+        ok = CsvIo::exportAsCsv(phrases,
+                                QLocale(sourceLanguage),
+                                getFromFirstLines<QLocale>(source, PatternLanguage),
+                                fileName);
     } else {
         QVector<QLocale> locales;
         QVector<QVector<Phrase> > phrases;
         for(const QUrl & url : sources){
-            const QLocale l = getLanguageFromTsFile(url);
+            const QLocale l = getFromFirstLines<QLocale>(url, PatternLanguage);
             if(locales.contains(l)){
                 emit error("Multiple sources have the same language");
                 return;
             }
             locales.append(l);
             phrases.append(parseSingleTsFile(url));
+            emit progressValue(++m_value);
         }
 
-        ok = CsvIo::exportAsCsv(phrases,locales,fileName);
+        ok = CsvIo::exportAsCsv(phrases,QLocale(sourceLanguage),locales,fileName);
     }
 
     emit progressValue(m_max);
 
     if(ok)
         emit success();
-    else
+    else{
         emit error("Failed to export into csv file!");
+        emit progressValue(0);
+    }
 }
-
-constexpr int FileModeUndefined(-1);
-constexpr int FileModeTS(0);
-constexpr int FileModeQPH(1);
 
 void PhrasebookMaker::updatePhrasebookFromFiles(const QList<QUrl> &sources, const QUrl &targetPhrasebook, const QString &sourceLanguage)
 {
-    // - ID if sources are TS or QPH and if they are mixed
+    // - ID if sources are TS or QPH or CSV and if they are mixed
     // - Parse target phrasebook and extract phrases
     // - extract phrases from sources
     // - patch phrases from target phrasebook
     // - write new file at target location, with the patched phrases
 
-    int fileMode(FileModeUndefined);
-    QString languageSource, languageTarget;
+    FileMode fileMode(FileMode::FileModeUndefined);
+
+
+    //Identify source and target language of the targetPhrasebook
+    const QString languageSource = getFromFirstLines<QString>(targetPhrasebook, PatternSourceLanguage);
+    const QString languageTarget = getFromFirstLines<QString>(targetPhrasebook, PatternLanguage);
+
+    if(languageTarget.isEmpty()){
+        emit error("Targeted language could not be determined!");
+        return;
+    }
+
+    auto checkTargetLanguage = [this,&languageTarget](const QUrl &url)->bool{
+        //If this Returns false, emit error message and exit from PhrasebookMaker::updatePhrasebookFromFiles
+        QString language = getFromFirstLines<QLocale>(url, PatternLanguage).name();
+        if(languageTarget != language){
+            emit error(tr("Targeted languages do not match!"));
+            return false;
+        }
+        return true;
+    };
+
     for(const QUrl &url : sources){
-        QFile readFile(url.toLocalFile());
-        if(readFile.open(QIODevice::ReadOnly)){
-            QString content = readFile.readAll();
-            readFile.close();
 
-            int cFileMode(FileModeUndefined);
-
-            if(content.contains("<!DOCTYPE TS>")){
-                cFileMode = FileModeTS;
-            } else if(content.contains("<!DOCTYPE QPH>")){
-                cFileMode = FileModeQPH;
-            }
-            if(fileMode == FileModeUndefined && cFileMode != FileModeUndefined)
-                fileMode = cFileMode;
-
-            if(cFileMode == FileModeUndefined){
-                emit error("The file type could not be determand!");
+        FileMode cFileMode(FileMode::FileModeUndefined);
+        if(isTsFile(url)){
+//----------Is *.ts file
+            cFileMode = FileMode::FileModeTS;
+            if(!checkTargetLanguage(url))
                 return;
-            } else {
-                if(fileMode != cFileMode){
-                    emit error("Error: Mixed *.ts and *.qph files!");
-                    return;
-                }
+        } else if(isQphFile(url)){
+//----------Is *.qph file
+            cFileMode = FileMode::FileModeQPH;
+            QString language = getFromFirstLines<QLocale>(url,PatternSourceLanguage).name();
+
+            if(languageSource != language){
+                emit error(tr("Source languages do not match!"));
+                return;
+            }
+            if(!checkTargetLanguage(url))
+                return;
+
+        } else if(isCsvFile(url)){
+//----------is CSV file
+            cFileMode = FileMode::FileModeCsv;
+
+            //Check, if the cvs file has the same source language as the target phrasebook
+            QString context = getFromFirstLines<QString>(url, QStringLiteral("(?<=\\()%1(?=\\):)").arg(sourceLanguage));
+            if(context != sourceLanguage){
+                //Source Language missmatch
+                emit error(tr("Source languages do not match!"));
+                return;
             }
 
-            //Language always follows the DOCTYPE
-            int index(0);
-            if(cFileMode == FileModeQPH){
-                //not ts file check for source language
-
-                QRegExp regEx("<QPH sourcelanguage=\"(.*)\"");
-                regEx.setMinimal(true);
-                index = regEx.indexIn(content);
-                if(index <0){
-                    emit error("Parse error of target file!");
-                    return ;
-                }
-
-                QString language = content.mid(index + 21, 5);
-                if(languageSource.isEmpty())
-                    languageSource = language;
-                else if(languageSource != language){
-                    emit error(tr("Source languages do not match!"));
-                    return;
-                }
+            //Check if csv File has the targetLanguage as  a column
+            if(!hasPatternDefined(url, QStringLiteral("(?<=\\()%1(?=\\):)").arg(languageTarget)/*context.isEmpty()*/)){
+                //TargetLanguage not found
+                emit error(tr("CSV file does not contain an entry for the targeted language!"));
+                return;
             }
+        }
 
-            QRegExp regEx("language=\"(.*)\"");
-            regEx.setMinimal(true);
-            index = regEx.indexIn(content, index + 21);
-            if(index <0){
-                emit error("Parse error of target file!");
-                return ;
-            }
-            QString language = content.mid(index + 10, 5);
-            if(languageTarget.isEmpty())
-                languageTarget = language;
-            else if(languageTarget != language){
-                emit error(tr("Targeted languages do not match!"));
+        if(fileMode == FileMode::FileModeUndefined && cFileMode != FileMode::FileModeUndefined)
+            fileMode = cFileMode;
+
+        if(cFileMode == FileMode::FileModeUndefined){
+            emit error("The file type could not be determined!");
+            return;
+        } else {
+            if(fileMode != cFileMode){
+                emit error("Error: Mixed different source!");
                 return;
             }
         }
     }
 
     //error handling
-    if(fileMode == FileModeUndefined){
-        emit error("The file type could not be determand!");
+    if(fileMode == FileMode::FileModeUndefined){
+        emit error("The file type could not be determined!");
         return;
-    }
-
-    if(languageTarget.isEmpty()){
-        emit error("Targeted language could not be determind!");
-        return;
-    }
-
-    if(languageSource.isEmpty())
-        languageSource = sourceLanguage;
-    //Determined source and target languages need to match the target file languages
-    QFile readFile(targetPhrasebook.toLocalFile());
-    if(readFile.open(QIODevice::ReadOnly)){
-        QString content = readFile.readAll();
-        readFile.close();
-
-        if(!content.contains("<!DOCTYPE QPH>")){
-            emit error(tr("Target file is not a phrasebook!"));
-            return;
-        }
-
-        //Source language of target
-        QRegExp regEx("<QPH sourcelanguage=\"(.*)\"");
-        regEx.setMinimal(true);
-        int index = regEx.indexIn(content);
-        if(index <0){
-            emit error("Parse error of target file!");
-            return ;
-        }
-        QString language = content.mid(index + 21, 5);
-        if(languageSource.isEmpty())
-            languageSource = language;
-        else if(languageSource != language){
-            emit error(tr("Source languages do not match!"));
-            return;
-        }
-
-        //target language of target
-        regEx.setPattern("language=\"(.*)\"");
-        index = regEx.indexIn(content, index + 21);
-        if(index <0){
-            emit error("Parse error of target file!");
-            return ;
-        }
-        language = content.mid(index + 10, 5);
-        if(language != languageTarget){
-            emit error(tr("Targeted language does not match with the others!"));
-            return;
-        }
     }
 
     //Now the actual patching
 
     //Extract Phrases from target and add phrases when not existend
     QVector<Phrase> existingPhrases = phrasesFromPhrasebook(targetPhrasebook);
-    for(const QUrl &url : sources){
-        const QVector<Phrase> phrasesFromSourceFile = fileMode == FileModeQPH ?
-                    phrasesFromPhrasebook(url) :
-                    parseSingleTsFile(url, targetPhrasebook.fileName().split(".").first());
+    auto getPhrasesFrom = [this, &targetPhrasebook, &languageTarget](const QUrl &source, FileMode mode)->QVector<Phrase>{
+        switch (mode) {
+        case FileMode::FileModeTS: return parseSingleTsFile(source, targetPhrasebook.fileName().split(".").first());
+        case FileMode::FileModeQPH: return phrasesFromPhrasebook(source);
+        case FileMode::FileModeCsv: return CsvIo::importFromCsv(source, QLocale(languageTarget));
+        case FileMode::FileModeUndefined:{
+            Q_ASSERT_X(false,"Getting Phrases from source", "Unidentified source");
+            return  QVector<Phrase>();
+        }
+        }
+        return  QVector<Phrase>();
+    };
+    for(const QUrl &source : sources){
+        const QVector<Phrase> phrasesFromSourceFile = getPhrasesFrom(source, fileMode);
 
         for(const Phrase &p : phrasesFromSourceFile){
             if(!existingPhrases.contains(p)){
@@ -353,56 +339,73 @@ void PhrasebookMaker::updatePhrasebookFromFiles(const QList<QUrl> &sources, cons
     emit success();
 }
 
-void PhrasebookMaker::patchTsFileFromPhrasebooks(const QList<QUrl> &sourcesQph, const QUrl &targetTsFile)
+void PhrasebookMaker::patchTsFromFiles(const QList<QUrl> &sourcesQph, const QUrl &targetTsFile)
 {
     /*
     Steps:
-    - Check sources are qph files
-    - check target *ts lanugage matches all languages inside the phrasebook files
+    - Check sources are qph or CSV files
+    - check target *ts lanugage matches all languages inside the source files
     - Parse targetTS extract all phrases, subset untranslated phrases
-    - Parse source qph extract all phrases and check each against untranslated phrases
+    - Parse source and extract all phrases and check each against untranslated phrases
         When translation found, add it, add type tag "unfinished" move it to all phrases
         continue untill subset empty or all sources parsed
     */
 
-    //Id TS target languagse
-    bool isTsFile(false);
-    QString targetLanguage;
-    QFile f(targetTsFile.toLocalFile());
-    if(f.open(QIODevice::ReadOnly)){
-        QTextStream readStream(&f);
+    //Check target is ts file and extract targetlanguage
 
-        while(!readStream.atEnd()){
-            QString line = readStream.readLine();
-
-            if(!isTsFile && line.contains("<!DOCTYPE TS>")){
-                isTsFile = true;
-            }
-
-            if(line.contains("language=\"")){
-                const QString searchStr("language=\"");
-                int i= line.indexOf(searchStr);
-                targetLanguage = line.mid(i + searchStr.length(), 5);
-            }
-            if(isTsFile && !targetLanguage.isEmpty())
-                //All needed information acquiered: break from while -> next file in list
-                break;
-        }
-        f.close();
+    if(!isTsFile(targetTsFile)){
+        emit error(tr("Wrong format for the target file!"));
+        return;
     }
+
+    const QString targetLanguage = getFromFirstLines<QString>(targetTsFile, PatternLanguage);
     if(targetLanguage.isEmpty()){
         emit error(tr("Could not id targeted language!"));
         return;
     }
 
-    //Checks done update section
+    //Check if the sources are of the same type and match to the targeted ts file
+    FileMode mode{FileMode::FileModeUndefined};
+
+    for(const QUrl &url : sourcesQph){
+        //Detect if current File is a Phrasebook file or a CSV file or none of those
+        if(isQphFile(url)){
+            if(mode != FileMode::FileModeQPH && mode != FileMode::FileModeUndefined){
+                emit error("Please do not mix different types of sources!");
+                return;
+            }
+            mode = FileMode::FileModeQPH;
+            //Check if targeted languages match
+            const QString targetLanguageQph = getFromFirstLines<QString>(url, PatternLanguage);
+            if(targetLanguageQph != targetLanguage){
+                emit error(tr("Phrasebook targets a different language compared to the *.ts file!"));
+                return;
+            }
+        } else if(isCsvFile(url)){
+            if(mode != FileMode::FileModeCsv && mode != FileMode::FileModeUndefined){
+                emit error("Please do not mix different types of sources!");
+                return;
+            }
+            mode = FileMode::FileModeCsv;
+            //Check if csv File has the targetLanguage as  a column
+            if(!hasPatternDefined(url, QStringLiteral("(?<=\\()%1(?=\\):)").arg(targetLanguage)/*context.isEmpty()*/)){
+                emit error(tr("CSV file does not contain the targeted language inside the *.ts file!"));
+                return;
+            }
+        } else {
+            emit error(tr("Unsupported source file found!"));
+            return;
+        }
+    }
+
+    //Checks for target done create the Phrase list update section
     QVector<Phrase> phrasesFromTs = parseSingleTsFile(targetTsFile);
     QVector<Phrase> notTranslatedPhrases;
     QVector<Phrase> nowTranslatedPhrases;
 
     for(const Phrase &p : qAsConst(phrasesFromTs))
-            if(!p.hasTranslation() && (p.type() != Phrase::Vanished && p.type() != Phrase::Obsolete))
-                notTranslatedPhrases << p;
+        if(!p.hasTranslation() && (p.type() != Phrase::Vanished && p.type() != Phrase::Obsolete))
+            notTranslatedPhrases << p;
 
     if(notTranslatedPhrases.isEmpty()){
         emit error(tr("No untranslated phrases in the ts file!"));
@@ -414,44 +417,9 @@ void PhrasebookMaker::patchTsFileFromPhrasebooks(const QList<QUrl> &sourcesQph, 
     m_value = 0;
     emit progressMaximum(m_max);
     emit progressValue(0);
-    for(const QUrl &url : sourcesQph){
-        if(!url.fileName().endsWith(QStringLiteral(".qph"))){
-            emit error(tr("Please select only phrasebook files"));
-            return;
-        }
-
-        QString targetLangPb;
-        QFile readFile(url.toLocalFile());
-        if(readFile.open(QIODevice::ReadOnly)){
-            QString data = readFile.readAll();
-            QRegExp regEx("<QPH sourcelanguage=\"(.*)\"");
-            regEx.setMinimal(true);
-            int index = regEx.indexIn(data);
-            if(index <0){
-                emit error("Parse error of target file!");
-                return ;
-            }
-
-            regEx.setPattern("language=\"(.*)\"");
-            index = regEx.indexIn(data, index + 21);
-            if(index < 0){
-                emit error("Parse error of target file!");
-                return;
-            }
-
-            targetLangPb = data.mid(index + 10, 5);
-            if(targetLangPb != targetLanguage){
-                emit error(tr("Phrasebook targets a different language compared to the *.ts file!"));
-                return;
-            }
-        } else {
-            emit error(tr("Could not open phrasebook!"));
-            return;
-        }
-    }
 
     for(const QUrl &url : sourcesQph){
-        const QVector<Phrase> qphPhrases = phrasesFromPhrasebook(url,false);
+        const QVector<Phrase> qphPhrases = mode == FileMode::FileModeQPH ? phrasesFromPhrasebook(url,false): CsvIo::importFromCsv(url, targetLanguage);
 
         for( Phrase &tsPhrase : notTranslatedPhrases){
             for(const Phrase &qphPhrase : qphPhrases){
@@ -566,45 +534,7 @@ void PhrasebookMaker::patchTsFileFromPhrasebooks(const QList<QUrl> &sourcesQph, 
     emit success();
 }
 
-bool PhrasebookMaker::checkLanguages(const QUrl &url)
-{
-    QString sourceLangPb;
-    QString targetLangPb;
-    QFile readFile(url.toLocalFile());
-    if(!readFile.fileName().endsWith(".qph")){
-        emit error(tr("Not supported file format!"));
-        return false;
-    }
-    if(!readFile.exists() || !readFile.open(QIODevice::ReadOnly)){
-        emit error(tr("Target file could not be opened!"));
-        return false;
-    }
-    QString data = readFile.readAll();
-    QRegExp regEx("<QPH sourcelanguage=\"(.*)\"");
-    regEx.setMinimal(true);
-    int index = regEx.indexIn(data);
-    if(index <0){
-        emit error("Parse error of target file!");
-        return false;
-    }
-    
-    sourceLangPb = data.mid(index + 21,5);
-    regEx.setPattern("language=\"(.*)\"");
-    index = regEx.indexIn(data, index + 21);
-    if(index < 0){
-        emit error("Parseerror of target file!");
-        return false;
-    }
-    
-    targetLangPb = data.mid(index + 10, 5);
-
-    if(targetLangPb != m_targetLanguage || m_sourceLanguage != sourceLangPb){
-        emit error(tr("Language missmatch"));
-        return false;
-    }
-    return  true;
-}
-
+//The progress bar and current progress needs some love to better represent how the different operations are progressing
 void PhrasebookMaker::init(const QList<QUrl> &sources, const QString sourceLanguage)
 {
     m_sourceLanguage = sourceLanguage;
@@ -619,10 +549,8 @@ void PhrasebookMaker::init(const QList<QUrl> &sources, const QString sourceLangu
     emit progressMaximum(m_max);
 }
 
-bool PhrasebookMaker::preprocessTsSources(const QList<QUrl> &sources)
+bool PhrasebookMaker::preprocessTsSources(const QList<QUrl> &sources, bool targetLanguagesAreTheSame)
 {
-    m_targetLanguage.clear();
-
     if(sources.isEmpty()){
         emit error(tr("No files selected"));
         return false;
@@ -656,52 +584,21 @@ bool PhrasebookMaker::preprocessTsSources(const QList<QUrl> &sources)
             return  false;
         }
 
-        if(!hasLanguageDefined(url)){
+        if(!hasPatternDefined(url,PatternLanguage)){
             emit error(tr("*ts file has no language defined"));
             return false;
         }
 
-        /*
-        QTextStream stream(&readFile);
-        bool isTsFile(false);
-        QString language;
-
-//        if(getLanguageFromTsFile(url).);
-
-        while(!stream.atEnd()){
-            QString line = stream.readLine();
-
-            if(!isTsFile && line.contains("<!DOCTYPE TS>")){
-                isTsFile = true;
-            }
-
-            if(line.contains("language=\"")){
-                const QString searchStr("language=\"");
-                int i= line.indexOf(searchStr);
-                language = line.mid(i + searchStr.length(), 5);
-                if(m_targetLanguage.isEmpty())
-                    m_targetLanguage = language;
-                else if(m_targetLanguage != language){
+        if(targetLanguagesAreTheSame){
+            if(m_targetLanguage.isEmpty()){
+                m_targetLanguage = getFromFirstLines<QString>(url, PatternLanguage);
+            }else {
+                if(m_targetLanguage != getFromFirstLines<QString>(url, PatternLanguage)){
                     emit error("Selected files target different languages!");
                     return false;
                 }
-
             }
-            if(isTsFile && !language.isEmpty())
-                //All needed information acquiered: break from while -> next file in list
-                break;
         }
-
-        if(!isTsFile){
-            emit error(tr("Invalid file format"));
-            return  false;
-        }
-
-        if(language.isEmpty()){
-            emit error(tr("*ts file has no language defined"));
-            return false;
-        }
-        */
     }
     return true;
 }
@@ -793,57 +690,34 @@ QVector<Phrase> PhrasebookMaker::parseSingleTsFile(const QUrl &url, const QStrin
     return phrases;
 }
 
+bool PhrasebookMaker::isQphFile(const QUrl &url)
+{
+    return hasPatternDefined(url, QStringLiteral("<!DOCTYPE QPH"));
+}
+
 bool PhrasebookMaker::isTsFile(const QUrl &url)
 {
-    QFile file(url.toLocalFile());
-    if(!file.exists()|| !file.open(QIODevice::ReadOnly))
-        return false;
-
-    //Assumption: DOCTYPE has to be in the first 3 Lines of a ts file, actually first one, to be sure we parse 2 lines more
-    QString context;
-    QTextStream s(&file);
-    for(int i(0); i < 3; i++)
-        context.append(s.readLine());
-
-    return !findExactMatch(context, QStringLiteral("<!DOCTYPE TS>")).isEmpty();
+    return hasPatternDefined(url, QStringLiteral("<!DOCTYPE TS>"));
 }
 
-bool PhrasebookMaker::hasLanguageDefined(const QUrl &url)
+bool PhrasebookMaker::isCsvFile(const QUrl &url)
 {
-    QFile file(url.toLocalFile());
-    if(!file.exists()|| !file.open(QIODevice::ReadOnly))
-        return false;
-
-    //Assumption: DOCTYPE has to be in the first 3 Lines of a ts file, actually first one, to be sure we parse 2 lines more
-    QString context;
-    QTextStream s(&file);
-    for(int i(0); i < 3; i++)
-        context.append(s.readLine());
-
-    return !findExactMatch(context, QStringLiteral("language=\"(.*)\">")).isEmpty();
+    //Patterns looks for the existance of the translation tabe between to brackets followed by a `:`e.g: (en_US):
+    return hasPatternDefined(url, QStringLiteral("(?<=\\()(.*?)(?=\\):)"));
 }
 
-QLocale PhrasebookMaker::getLanguageFromTsFile(const QUrl &url)
+bool PhrasebookMaker::hasPatternDefined(const QUrl &url, const QString &pattern)
 {
-    QLocale l;
-    QFile file(url.toLocalFile());
-    if(!file.exists()|| !file.open(QIODevice::ReadOnly))
-        return l;
-    //Assumption: Language has to be in the first 3 Lines of a ts file
-    QString context;
-    QTextStream s(&file);
-    for(int i(0); i < 3; i++)
-        context.append(s.readLine());
-
-    const QString matched = findExactMatch(context, QStringLiteral("language=\"(.*)\">"));
-    l = QLocale(matched);
-    return  l;
+    return !getFromFirstLines<QString>(url, pattern).isEmpty();
 }
 
+#include <QDebug>
 QString PhrasebookMaker::findExactMatch(const QString &source, const QString &pattern)
 {
     QRegularExpression regEx(pattern);
-    QRegularExpressionMatch match = regEx.match(source);
+    QRegularExpressionMatch match = regEx.match(source,0,QRegularExpression::PartialPreferCompleteMatch);
+
+    qDebug() << match.capturedTexts();
 
     if(match.hasMatch()){
         return  match.captured(match.lastCapturedIndex());

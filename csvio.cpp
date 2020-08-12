@@ -11,6 +11,7 @@
 */
 
 #include <QFile>
+#include <QUrl>
 #include <QSaveFile>
 #include <QTextStream>
 
@@ -19,6 +20,7 @@
 const QString replaceSeperator(QStringLiteral("_Semicolon_"));
 
 bool CsvIo::exportAsCsv(QVector<Phrase> &phrasesToExport,
+                        const QLocale &sourceLanguage,
                         const QLocale &targetLanguage,
                         const QString &fileName,
                         const bool simplified)
@@ -46,7 +48,7 @@ bool CsvIo::exportAsCsv(QVector<Phrase> &phrasesToExport,
 
     //Header
     outStream << QStringLiteral("Source file:") << seperator
-              << QStringLiteral("Original text:") << seperator
+              << QStringLiteral("Original text (%1):").arg(sourceLanguage.name()) << seperator
               << QStringLiteral("Translation (%1):").arg(targetLanguage.name())
               << Qt::endl;
     //Body
@@ -60,7 +62,7 @@ bool CsvIo::exportAsCsv(QVector<Phrase> &phrasesToExport,
     return fileOut.commit();
 }
 
-bool CsvIo::exportAsCsv(QVector<QVector<Phrase> > &phrasesListsToExport, const QVector<QLocale> &targetLanguages, const QString &fileName, bool simplified)
+bool CsvIo::exportAsCsv(QVector<QVector<Phrase> > &phrasesListsToExport, const QLocale &sourceLanguage, const QVector<QLocale> &targetLanguages, const QString &fileName, bool simplified)
 {
     QSaveFile fileOut(fileName);
     if(!fileOut.open(QIODevice::WriteOnly))
@@ -87,9 +89,9 @@ bool CsvIo::exportAsCsv(QVector<QVector<Phrase> > &phrasesListsToExport, const Q
 
     //Header
     outStream << QStringLiteral("Source file:") << seperator
-              << QStringLiteral("Original text:") << seperator;
+              << QStringLiteral("Original text (%1):").arg(sourceLanguage.name());
     for(const QLocale &targetLanguage : targetLanguages)
-              outStream << QStringLiteral("Translation (%1):").arg(targetLanguage.name());
+              outStream << seperator << QStringLiteral("Translation (%1):").arg(targetLanguage.name());
     outStream << Qt::endl;
 
 
@@ -105,19 +107,19 @@ bool CsvIo::exportAsCsv(QVector<QVector<Phrase> > &phrasesListsToExport, const Q
                       << (phrase.sourceLiteral().replace(QStringLiteral(";"), replaceSeperator)) << seperator
                       << (phrase.targetLiteral().replace(QStringLiteral(";"), replaceSeperator));
             for(QVector<Phrase> &otherPhraseVector : phrasesListsToExport) {
-                if(&otherPhraseVector == &phrasesToExport)
-                    continue;
-                outStream << seperator;
-                for(Phrase & otherPhrase : otherPhraseVector){
-                    if(otherPhrase.source() == phrase.source() && otherPhrase.definition() == phrase.definition()){
-                        outStream << (phrase.targetLiteral().replace(QStringLiteral(";"), replaceSeperator));
-                        otherPhraseVector.removeOne(otherPhrase);
-                        break;
+                if(&otherPhraseVector != &phrasesToExport) {
+                    outStream << seperator;
+                    for(Phrase & otherPhrase : otherPhraseVector){
+                        if(otherPhrase.source() == phrase.source() && otherPhrase.definition() == phrase.definition()){
+                            outStream << (otherPhrase.targetLiteral().replace(QStringLiteral(";"), replaceSeperator));
+                            otherPhraseVector.removeOne(otherPhrase);
+                            break;
+                        }
                     }
                 }
             }
+            outStream << Qt::endl;
         }
-        outStream << Qt::endl;
         //Need to remove exported phrases from current list
         phrasesToExport.clear();
     }
@@ -125,38 +127,59 @@ bool CsvIo::exportAsCsv(QVector<QVector<Phrase> > &phrasesListsToExport, const Q
     return fileOut.commit();
 }
 
-QVector<Phrase> CsvIo::importFromCsv(const QString &fileName)
+QVector<Phrase> CsvIo::importFromCsv(const QUrl &fileName, const QLocale &targetLanguage)
 {
     QVector<Phrase> phrases;
 
-    QFile file(fileName);
+    QFile file(fileName.toLocalFile());
     if(!file.exists() || !file.open(QIODevice::ReadOnly))
         return  phrases;
 
+    //First we read the header and identify, if we have the sourceFile defined (definition) and at what index the targeted Language is
     QTextStream inStream(&file);
     QString line = inStream.readLine();
     constexpr QChar seperator(';');
 
-    QString definition;
-    auto splitRef = line.splitRef(seperator);
-    if(splitRef.size() > 2)
-        definition = line.splitRef(seperator).first().toString();
+    bool hasDefinition{false};
+    int languageIndex{-1};
 
-    const bool missingColumn = definition.isEmpty();
+    auto split = line.split(seperator);
+    if(split.first().contains(QStringLiteral("Source file:")))
+        hasDefinition = true;
+    const QString tLanguage = QStringLiteral("(%1):").arg(targetLanguage.name());
+    for(int i(0), j(split.size()); i < j; i++){
+        if(split.at(i).contains(tLanguage)){
+            languageIndex = i;
+            break;
+        }
+    }
+
+    if(Q_UNLIKELY(languageIndex == -1))
+        //should not be possible, we check for this beforhand in phrasebookmaker
+        return phrases;
+
+    QString definition;
+
     auto stringRefToReconstructedString = [](const QStringRef &ref)->QString{
         QString str = ref.toString();
         str = str.replace(replaceSeperator, QStringLiteral(";"));
         str = str.replace(QStringLiteral("\\n"), QChar('\n'));
         return  str;
     };
+
     while(!inStream.atEnd()) {
         line = inStream.readLine();
         const QVector<QStringRef> split = line.splitRef(seperator);
-        if(split.size() > (missingColumn ? 1 : 2)){
-            const QString source = stringRefToReconstructedString(missingColumn ? split.first() : split.at(1));
-            const QString target = stringRefToReconstructedString(split.last());
-            const Phrase phrase(source,target,definition,Phrase::Finished);
-            phrases.append(phrase);
+        if(hasDefinition)
+            definition = split.first().toString();
+
+        if(split.size() > languageIndex){
+            const QString target = stringRefToReconstructedString(split.at(languageIndex));
+            if(!target.isEmpty()){
+                const QString source = stringRefToReconstructedString(hasDefinition ? split.at(1) : split.first());
+                const Phrase phrase(source,target,definition,Phrase::Finished);
+                phrases.append(phrase);
+            }
         }
     }
 
