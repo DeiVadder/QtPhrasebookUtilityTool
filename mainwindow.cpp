@@ -50,6 +50,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(ui->actionMerge_Into_Target, &QAction::triggered, this, &MainWindow::mergeFiles);
     connect(ui->actionPatch_Ts_File, &QAction::triggered, this, &MainWindow::patchTsFile);
+    connect(ui->actionUpdate_Ts_file_from_CSV, &QAction::triggered, this, &MainWindow::patchTsFile);
 
     connect(ui->actionExport_To_Target, &QAction::triggered, this, &MainWindow::exportToSinglePhrasebook);
     connect(ui->actionExport_To_Phrasebook, &QAction::triggered, this, &MainWindow::exportToPhrasebooks);
@@ -84,7 +85,7 @@ MainWindow::~MainWindow()
 
 void MainWindow::addSource()
 {
-    const QList<QUrl> selectedFiles = QFileDialog::getOpenFileUrls(this, tr("Select your sources"),QUrl(),tr("Translation or Phrasebook (*.ts *.qph)") );
+    const QList<QUrl> selectedFiles = QFileDialog::getOpenFileUrls(this, tr("Select your sources"),QUrl(),tr("Translation or Phrasebook (*.ts *.qph);;CSV file (*.csv)") );
 
     for(const QUrl &url : selectedFiles){
         m_sourceModel.addEntry(url);

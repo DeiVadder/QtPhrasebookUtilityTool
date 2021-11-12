@@ -26,7 +26,7 @@ bool CsvIo::exportAsCsv(QVector<Phrase> &phrasesToExport,
                         const bool simplified)
 {
     QSaveFile fileOut(fileName);
-    if(!fileOut.open(QIODevice::WriteOnly))
+    if(!fileOut.open(QIODevice::WriteOnly | QIODevice::Text))
         //Target file could not be created/open
         return false;
 
@@ -50,13 +50,13 @@ bool CsvIo::exportAsCsv(QVector<Phrase> &phrasesToExport,
     outStream << QStringLiteral("Source file:") << seperator
               << QStringLiteral("Original text (%1):").arg(sourceLanguage.name()) << seperator
               << QStringLiteral("Translation (%1):").arg(targetLanguage.name())
-              << Qt::endl;
+              << endl;
     //Body
     for(Phrase &phrase : phrasesToExport){
         outStream << (phrase.definitionLiteral().replace(QStringLiteral(";"), replaceSeperator) )<< seperator
                   << (phrase.sourceLiteral().replace(QStringLiteral(";"), replaceSeperator)) << seperator
                   << (phrase.targetLiteral().replace(QStringLiteral(";"), replaceSeperator))
-                  << Qt::endl;
+                  << endl;
     }
 
     return fileOut.commit();
@@ -92,7 +92,7 @@ bool CsvIo::exportAsCsv(QVector<QVector<Phrase> > &phrasesListsToExport, const Q
               << QStringLiteral("Original text (%1):").arg(sourceLanguage.name());
     for(const QLocale &targetLanguage : targetLanguages)
               outStream << seperator << QStringLiteral("Translation (%1):").arg(targetLanguage.name());
-    outStream << Qt::endl;
+    outStream << endl;
 
 
     //We can't assume that each ts file has each entry -> we have to run through all vectors each time and check if available
@@ -118,7 +118,7 @@ bool CsvIo::exportAsCsv(QVector<QVector<Phrase> > &phrasesListsToExport, const Q
                     }
                 }
             }
-            outStream << Qt::endl;
+            outStream << endl;
         }
         //Need to remove exported phrases from current list
         phrasesToExport.clear();
@@ -175,7 +175,7 @@ QVector<Phrase> CsvIo::importFromCsv(const QUrl &fileName, const QLocale &target
 
         if(split.size() > languageIndex){
             const QString target = stringRefToReconstructedString(split.at(languageIndex));
-            if(!target.isEmpty()){
+            if(!target.isEmpty() && split.size() > 1){
                 const QString source = stringRefToReconstructedString(hasDefinition ? split.at(1) : split.first());
                 const Phrase phrase(source,target,definition,Phrase::Finished);
                 phrases.append(phrase);

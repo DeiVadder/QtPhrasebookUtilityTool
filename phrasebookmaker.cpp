@@ -589,7 +589,7 @@ bool PhrasebookMaker::preprocessTsSources(const QList<QUrl> &sources, bool targe
             return false;
         }
 
-        if(targetLanguagesAreTheSame){
+        if(targetLanguagesAreTheSame || m_targetLanguage.isEmpty()){
             if(m_targetLanguage.isEmpty()){
                 m_targetLanguage = getFromFirstLines<QString>(url, PatternLanguage);
             }else {
@@ -717,7 +717,7 @@ QString PhrasebookMaker::findExactMatch(const QString &source, const QString &pa
     QRegularExpression regEx(pattern);
     QRegularExpressionMatch match = regEx.match(source,0,QRegularExpression::PartialPreferCompleteMatch);
 
-    qDebug() << match.capturedTexts();
+    qDebug() << match.capturedTexts() << match.lastCapturedIndex();
 
     if(match.hasMatch()){
         return  match.captured(match.lastCapturedIndex());
